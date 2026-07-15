@@ -1364,15 +1364,17 @@ def index_note_to_collection(note_id):
         if not NoteService(username).note_exists(note_id):
             return jsonify({"success": False, "error": "Note not found"}), 404
 
-        # Get RAG service configured for the collection
-        rag_service = get_rag_service(collection_id)
-
-        # Index the note (notes are now documents)
-        result = rag_service.index_document(
-            document_id=note_id,
-            collection_id=collection_id,
-            force_reindex=force_reindex,
-        )
+        # Get RAG service configured for the collection. Use `with` so the
+        # embedding backend it lazily builds (an Ollama httpx client / a
+        # SentenceTransformer) is closed — every OTHER get_rag_service caller
+        # does; this route leaked the client's socket FD on each call.
+        with get_rag_service(collection_id) as rag_service:
+            # Index the note (notes are now documents)
+            result = rag_service.index_document(
+                document_id=note_id,
+                collection_id=collection_id,
+                force_reindex=force_reindex,
+            )
 
         if result["status"] == "error":
             return jsonify(
