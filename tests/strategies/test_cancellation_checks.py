@@ -1,4 +1,4 @@
-"""Tests for strategy cancellation checks (PR #2452).
+"""Tests for strategy cancellation checks (PRs #4872, #5092).
 
 Verifies:
 - BaseSearchStrategy.check_termination() calls progress_callback
@@ -77,7 +77,11 @@ class TestStrategiesCallCheckTermination:
         )
 
         source = inspect.getsource(SourceBasedSearchStrategy.analyze_topic)
-        assert "self.check_termination()" in source
+        # Three distinct call sites: iteration loop entry (#4872), after
+        # the parallel search, and before the final synthesis (#5092). A
+        # plain containment check would stay green if two of the three
+        # were removed.
+        assert source.count("self.check_termination()") >= 3
 
     def test_focused_iteration_calls_check(self):
         """FocusedIterationStrategy.analyze_topic must call check_termination().
@@ -111,7 +115,9 @@ class TestStrategiesCallCheckTermination:
         )
 
         source = inspect.getsource(NewsAggregationStrategy.analyze_topic)
-        assert "self.check_termination()" in source
+        # Two call sites: top of the method and before the analysis LLM
+        # call (#5092).
+        assert source.count("self.check_termination()") >= 2
 
     def test_topic_organization_calls_check(self):
         """TopicOrganizationStrategy.analyze_topic must call check_termination().
@@ -126,7 +132,15 @@ class TestStrategiesCallCheckTermination:
         )
 
         source = inspect.getsource(TopicOrganizationStrategy.analyze_topic)
-        assert "self.check_termination()" in source
+        # Two call sites: top of the method and top of each refinement
+        # iteration (#5092).
+        assert source.count("self.check_termination()") >= 2
+        # The delegate's own checks only work if the callback reaches it —
+        # TopicOrganizationStrategy must propagate it (see #5092 follow-up).
+        propagation_source = inspect.getsource(
+            TopicOrganizationStrategy.set_progress_callback
+        )
+        assert "source_strategy.set_progress_callback" in propagation_source
 
     def test_enhanced_contextual_followup_calls_check(self):
         """EnhancedContextualFollowupStrategy.analyze_topic must call check_termination().
